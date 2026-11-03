@@ -324,3 +324,7 @@ All subpages (each has a "Copy Markdown" button for easy reference):
 - `/supported-object-types` — DevRev object types available for mapping (issues, tickets, conversations, articles, custom objects, etc.) and their supported fields.
 - `/data-model/rich-text-fields` — Rich text format: markdown arrays with mention objects (`ref_type`, `id`, `fallback_record_name`), article importing with inline attachments (artifact references) and article cross-links.
 - `/data-model/mapping-reasons` — Transformation methods reference: `use_directly`, `make_custom_stages`, `map_enum`, `use_rich_text`, `use_fixed_value`, `use_raw_jq`, `make_constrained_simple_value`, `reference_custom_field`, `construct_text_field`, etc.; reasons why certain mappings may be unavailable (type mismatches, struct limitations, link restrictions).
+
+### Local test server errors
+
+The Express runner in `code/test/runner.ts` returns generic errors for thrown handler failures, including JSON and protobuf operation responses and logs the original error on the server. `code/test/runner.test.ts` uses Supertest to verify that successful results are preserved and error messages, stacks and custom properties do not reach HTTP clients. The default Jest suite includes `code/test/`.

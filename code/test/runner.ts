@@ -21,8 +21,6 @@ import {
   ActivateHookResult,
   DeactivateHookResult,
   ExecutionResult,
-  FunctionError,
-  HandlerError,
   RuntimeError,
   RuntimeErrorType,
   SnapInsSystemUpdateRequest,
@@ -35,11 +33,10 @@ import {
 import {
   ExecuteOperationResult,
   ExecuteOperationResult_SerializationFormat,
-  FunctionExecutionError,
   OperationOutput,
 } from '@devrev/typescript-sdk/dist/snap-ins';
 
-const app: Express = express();
+export const app: Express = express();
 app.disable('x-powered-by');
 app.use(bodyParser.json(), bodyParser.urlencoded({ extended: false }));
 
@@ -76,9 +73,8 @@ async function run(f: any, event: any): Promise<any> {
 }
 
 async function handleEvent(events: any[], isAsync: boolean, resp: Response) {
-  let error;
+  let error: RuntimeError | undefined;
   let results: ExecutionResult[] = [];
-  let receivedError = false;
 
   if (!Array.isArray(events)) {
     let errMsg = 'Invalid request format: body is not an array';
@@ -108,6 +104,8 @@ async function handleEvent(events: any[], isAsync: boolean, resp: Response) {
   }
 
   for (let event of events) {
+    error = undefined;
+    let handlerFailed = false;
     let result;
     const functionName: FunctionFactoryType = event.execution_metadata.function_name as FunctionFactoryType;
     if (functionName === undefined) {
@@ -116,7 +114,7 @@ async function handleEvent(events: any[], isAsync: boolean, resp: Response) {
         err_msg: 'Function name not provided in event',
       } as RuntimeError;
       console.error(error.err_msg);
-      receivedError = true;
+      handlerFailed = true;
     } else {
       const f = functionFactory[functionName];
       try {
@@ -126,19 +124,19 @@ async function handleEvent(events: any[], isAsync: boolean, resp: Response) {
             err_msg: `Function ${event.execution_metadata.function_name} not found in factory`,
           } as RuntimeError;
           console.error(error.err_msg);
-          receivedError = true;
+          handlerFailed = true;
         } else {
           result = await run(f, [event]);
         }
       } catch (e) {
-        error = { error: e } as FunctionError;
+        handlerFailed = true;
         console.error(e);
       }
 
       // Any common post processing goes here. The function returns
       // only if the function execution was by an operation
     }
-    const opResult = await postRun(event, error, result);
+    const opResult = await postRun(event, handlerFailed, result);
 
     // Return result.
     let res: ExecutionResult = {};
@@ -150,7 +148,9 @@ async function handleEvent(events: any[], isAsync: boolean, resp: Response) {
     }
 
     if (error !== undefined) {
-      res.error = error;
+      res.error = { err_type: error.err_type, err_msg: error.err_msg };
+    } else if (handlerFailed) {
+      res.error = { error: 'Function execution failed. See server logs for details.' };
     }
     results.push(res);
   }
@@ -161,16 +161,16 @@ async function handleEvent(events: any[], isAsync: boolean, resp: Response) {
 }
 
 // post processing
-async function postRun(event: any, handlerError: HandlerError, result: any) {
+async function postRun(event: any, hasError: boolean, result: any) {
   console.debug('Function execution complete');
   // Check if the function was invoked by an operation.
   if (isInvokedFromOperation(event)) {
-    return handleOperationInvocationResult(event, handlerError, result);
+    return handleOperationInvocationResult(event, result);
   }
   if (isActivateHook(event)) {
-    handleActivateHookResult(event, handlerError, result);
+    handleActivateHookResult(event, hasError, result);
   } else if (isDeactivateHook(event)) {
-    handleDeactivateHookResult(event, handlerError, result);
+    handleDeactivateHookResult(event, hasError, result);
   }
   return undefined
 }
@@ -187,7 +187,7 @@ function isInvokedFromOperation(event: any): boolean {
   return event.execution_metadata.operation_slug !== undefined;
 }
 
-function handleActivateHookResult(event: any, handlerError: HandlerError, result: any) {
+function handleActivateHookResult(event: any, hasError: boolean, result: any) {
   let update_req: SnapInsSystemUpdateRequest = {
     id: event.context.snap_in_id,
     status: SnapInsSystemUpdateRequestStatus.Active,
@@ -195,7 +195,7 @@ function handleActivateHookResult(event: any, handlerError: HandlerError, result
   let res = getActivateHookResult(result);
   update_req.inputs_values = res.inputs_values;
 
-  if (handlerError !== undefined || res?.status === 'error') {
+  if (hasError || res?.status === 'error') {
     console.debug('Setting snap-in status to error');
     update_req.status = SnapInsSystemUpdateRequestStatus.Error;
   }
@@ -203,7 +203,7 @@ function handleActivateHookResult(event: any, handlerError: HandlerError, result
   return updateSnapInState(event, update_req);
 }
 
-function handleDeactivateHookResult(event: any, handlerError: HandlerError, result: any) {
+function handleDeactivateHookResult(event: any, hasError: boolean, result: any) {
   let update_req: SnapInsSystemUpdateRequest = {
     id: event.context.snap_in_id,
     status: SnapInsSystemUpdateRequestStatus.Inactive,
@@ -213,7 +213,7 @@ function handleDeactivateHookResult(event: any, handlerError: HandlerError, resu
   if (event.payload.force_deactivate) {
     console.debug('Snap-in is being force deactivated, errors ignored');
   }
-  if ((handlerError !== undefined || res?.status === 'error') && !event.payload.force_deactivate) {
+  if ((hasError || res?.status === 'error') && !event.payload.force_deactivate) {
     console.debug('Setting snap-in status to error');
     update_req.status = SnapInsSystemUpdateRequestStatus.Error;
   } else {
@@ -285,11 +285,10 @@ function getDeactivateHookResult(input: any): DeactivateHookResult {
 
 async function handleOperationInvocationResult(
   event: any,
-  handlerError: HandlerError,
   result: any,
 ): Promise<ExecuteOperationResult> {
   if (result === undefined) {
-    result = generateOperationOutputFromError(handlerError);
+    result = generateOperationOutputFromError();
   }
 
   const operationMethod = getOperationExecutionOperationMethod(event) || '';
@@ -300,32 +299,14 @@ async function handleOperationInvocationResult(
   return createExecuteOperationResult(result, ExecuteOperationResult_SerializationFormat.Proto);
 }
 
-function generateOperationOutputFromError(handlerError: HandlerError): OperationOutput {
-  const errorDetails: FailedExecutionError = {
-    source: FailedExecutionErrorSource.DeveloperFunction,
-    error:
-      handlerError instanceof FunctionExecutionError
-        ? handlerError
-        : new FunctionExecutionError((handlerError as unknown as Error)?.message, false),
-  };
-
-  return OperationOutput.fromJSON({ error: errorDetails }) as OperationOutput;
+function generateOperationOutputFromError(): OperationOutput {
+  return OperationOutput.fromJSON({
+    error: {
+      message: 'Function execution failed. See server logs for details.',
+      type: 'Unknown',
+    },
+  });
 }
-
-
-export enum FailedExecutionErrorSource {
-  // Source of the error not known.
-  Unknown = 'unknown',
-  // Error is returned from the developer in the function.
-  DeveloperFunction = 'developer_function',
-  // Error is returned from the platform.
-  Platform = 'platform',
-}
-
-export type FailedExecutionError = {
-  source: FailedExecutionErrorSource;
-  error: FunctionExecutionError;
-};
 
 function createExecuteOperationResult(
   responseData: any,
