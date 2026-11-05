@@ -23,6 +23,8 @@ This document describes the AirSync connector for [Asana](https://asana.com/), e
 
 # 2. Technical Design
 
+Runtime dependency: `@devrev/airsync-sdk` 2.1.0.
+
 ## 2.1 Authentication
 
 Authentication is done via OAuth 2.0 (Authorization Code Grant) or Personal Access Token (PAT). Both are configured in `manifest.yaml`.
