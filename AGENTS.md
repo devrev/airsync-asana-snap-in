@@ -4,7 +4,7 @@
 
 DevRev AirSync connector for Asana. Supports bidirectional synchronization: extraction (Asana → DevRev) of tasks, subtasks, users, tags, comments, attachments, links, groups (teams), group memberships, and access rules (project permissions), and loading (DevRev → Asana) of tasks, subtasks, comments, links, and attachments. Supports initial, incremental, and time-scoped syncs.
 
-Runs as a **snap-in** (plug-in) on AWS Lambda using the `@devrev/airsync-sdk` SDK. Each sync operates on an **Asana Project** as its sync unit, selected by the user from their workspace.
+Runs as a **snap-in** (plug-in) on AWS Lambda using `@devrev/airsync-sdk` 2.1.0. Each sync operates on an **Asana Project** as its sync unit, selected by the user from their workspace.
 
 ## Key Concepts
 
