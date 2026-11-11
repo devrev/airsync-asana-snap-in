@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "custom_field": {
+        "gid": "9001",
+        "name": "Customer note",
+        "type": "text",
+        "description": "A modeled project note."
+      }
+    },
+    {
+      "custom_field": {
+        "gid": "9002",
+        "name": "Estimate",
+        "type": "number"
+      }
+    }
+  ],
+  "next_page": {
+    "offset": "custom-page-final"
+  }
+}

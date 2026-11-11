@@ -1,0 +1,9 @@
+{
+  "data": [
+    {
+      "gid": "usrReviewer",
+      "name": "Modeled reviewer",
+      "email": "reviewer@example.invalid"
+    }
+  ]
+}

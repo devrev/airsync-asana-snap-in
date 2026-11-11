@@ -1,0 +1,15 @@
+api:
+  type: component-test
+passthrough: []
+static_endpoints:
+  - path: /api/1.0/projects/project-synthetic
+    method: GET
+    body_file: responses/response-1.json
+  - path: /api/1.0/projects/project-synthetic/custom_field_settings
+    method: GET
+    body_file: responses/response-2.json
+  - path: /api/1.0/projects/project-synthetic/sections
+    method: GET
+    body_file: responses/response-3.json
+scenarios:
+  happy: {}

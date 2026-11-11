@@ -1,0 +1,30 @@
+{
+  "data": [
+    {
+      "custom_field": {
+        "gid": "9003",
+        "name": "Risk",
+        "type": "enum",
+        "enum_options": [
+          {
+            "gid": "710",
+            "name": "Low",
+            "enabled": true
+          },
+          {
+            "gid": "720",
+            "name": "Retired",
+            "enabled": false
+          }
+        ]
+      }
+    },
+    {
+      "custom_field": {
+        "gid": "9004",
+        "name": "Reviewers",
+        "type": "people"
+      }
+    }
+  ]
+}

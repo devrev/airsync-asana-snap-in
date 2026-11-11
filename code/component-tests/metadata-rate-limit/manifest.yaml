@@ -1,0 +1,83 @@
+version: 1
+connector:
+  entrypoint: ../../dist/index.js
+  function: extraction
+stages:
+  - metadata_extraction
+connection_data:
+  org_id: workspace-synthetic
+  org_name: Synthetic component test
+  key: synthetic-component-token
+  key_type: pat
+event_context:
+  external_sync_unit_id: project-synthetic
+  external_sync_unit_name: Synthetic scope
+  import_slug: asana
+limits:
+  max_invocations: 3
+  invocation_timeout_ms: 30000
+  scenario_timeout_ms: 60000
+mock_server:
+  config: mock-server.yaml
+  scenario: happy
+  health_path: /admin/config
+schema:
+  edm:
+    filename: "*external_domain_metadata*"
+  context:
+    schema_variant: metadata-rate-limit
+    connection: asana-synthetic
+    external_sync_unit: project-synthetic
+  checks:
+    - consistency
+    - chef
+assertions:
+  schema:
+    edm:
+      - path: record_types
+        count: 9
+      - path: record_types.tasks.fields.9001.type
+        equals: text
+      - path: record_types.tasks.fields.9002.type
+        equals: float
+      - path: record_types.tasks.fields.9003.enum.values
+        equals:
+          - key: "710"
+            name: Low
+            is_deprecated: false
+          - key: "720"
+            name: Retired
+            is_deprecated: true
+      - path: record_types.tasks.fields.9004.reference.refers_to.#record:users
+        exists: true
+      - path: record_types.tasks.fields.9004.collection
+        exists: true
+      - path: record_types.subtasks.fields.9001.type
+        equals: text
+      - path: record_types.tasks.fields.section.enum.values
+        equals:
+          - key: "810"
+            name: Todo
+          - key: "820"
+            name: Doing
+          - key: "830"
+            name: Done
+      - path: record_types.tasks.stage_diagram.starting_stage
+        equals: "810"
+      - path: record_types.tasks.stage_diagram.stages.830.state
+        equals: closed
+    idm:
+      - path: additional_mappings.record_type_mappings.tasks
+        exists: true
+      - path: additional_mappings.record_type_mappings.subtasks
+        exists: true
+    installations:
+      - count: 1
+  callbacks:
+    match:
+      - count: 2
+      - contains:
+          event_type: METADATA_EXTRACTION_DELAYED
+      - contains:
+          event_type: METADATA_EXTRACTION_DONE
+wait_for_delays: false

@@ -418,3 +418,7 @@ Upgrade between runs after v1 workers finish. Once v2 persists state, rollback r
 ### Migration integration verification
 
 `code/src/sdk-migration.integration.test.ts` exercises the installed SDK and connector workers in real worker threads, with both platform and Asana HTTP endpoints served locally. It covers transient 5xx retries and request parameters; metadata failure short-circuiting; metadata timeout defaults; 429 delay seconds and the 60-second fallback; ESU retry hints; flat v1 state conversion; data timeout and continuation from the persisted next-page offset; mapper records, 404/null and HTTP failures; and real loader create/update/429/error outcomes. Each worker invocation must produce exactly one platform callback. These tests require no live credentials and run with the standard Jest suite.
+
+### Dynamic EDM component tests
+
+`code/component-tests/` runs the production metadata worker against synthetic Asana HTTP responses through the shared component runner. Base, paginated custom fields/sections, and denied discovery assert emitted EDM and installed IDM. `utils/local-development.ts` accepts `MOCK_SERVER_URL` only with explicit local mode, a loopback origin, and no Lambda deployment markers; Asana API paths and production defaults are preserved. See `code/component-tests/README.md` for commands and limits.

@@ -1,0 +1,45 @@
+api:
+  type: component-test
+passthrough: []
+static_endpoints:
+  - path: /api/1.0/projects/project-synthetic
+    method: GET
+    body_file: responses/response-1.json
+  - path: /api/1.0/projects/project-synthetic/custom_field_settings
+    method: GET
+    query_contains:
+      offset: custom-page-final
+    body_file: responses/response-2.json
+  - path: /api/1.0/projects/project-synthetic/custom_field_settings
+    method: GET
+    body_file: responses/response-3.json
+  - path: /api/1.0/projects/project-synthetic/sections
+    method: GET
+    query_contains:
+      offset: sections-page-final
+    body_file: responses/response-4.json
+  - path: /api/1.0/projects/project-synthetic/sections
+    method: GET
+    body_file: responses/response-5.json
+  - path: /api/1.0/users
+    method: GET
+    body_file: responses/response-6.json
+  - path: /api/1.0/workspaces/workspace-synthetic/tags
+    method: GET
+    body_file: responses/response-7.json
+  - path: /api/1.0/workspaces/workspace-synthetic/teams
+    method: GET
+    body_file: responses/response-8.json
+  - path: /api/1.0/memberships
+    query_contains:
+      parent: project-synthetic
+    method: GET
+    body_file: responses/response-9.json
+  - path: /api/1.0/projects/project-synthetic/tasks
+    method: GET
+    body_file: responses/response-10.json
+  - path: /api/1.0/tasks/task-101/stories
+    method: GET
+    body_file: responses/response-11.json
+scenarios:
+  happy: {}

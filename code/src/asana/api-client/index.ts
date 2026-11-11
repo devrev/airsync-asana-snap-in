@@ -2,6 +2,7 @@ import { AirSyncEvent } from '@devrev/airsync-sdk';
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import axiosRetry from 'axios-retry';
 
+import { getLocalMockOrigin } from '@utils/local-development';
 import { serializeError } from '@utils/serialize-error';
 
 import {
@@ -167,8 +168,9 @@ export class AsanaClient {
     this.workspaceId = event.payload.connection_data.org_id;
     this.projectId = event.payload.event_context.external_sync_unit_id;
 
+    const mockOrigin = getLocalMockOrigin();
     const axiosInstance = axios.create({
-      baseURL: ASANA_API_BASE_URL,
+      baseURL: mockOrigin ? `${mockOrigin}/api/1.0` : ASANA_API_BASE_URL,
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },

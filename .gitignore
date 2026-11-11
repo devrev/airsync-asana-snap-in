@@ -54,3 +54,5 @@ code/scripts/generate-mock-data/mock-data-manifest.json
 marketplace.yaml
 
 .airsync/
+
+code/.fixture-runs/

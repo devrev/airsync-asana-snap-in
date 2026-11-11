@@ -1,0 +1,30 @@
+version: 1
+connector:
+  entrypoint: ../../dist/index.js
+  function: extraction
+stages:
+  - metadata_extraction
+connection_data:
+  org_id: workspace-synthetic
+  org_name: Synthetic component test
+  key: synthetic-component-token
+  key_type: pat
+event_context:
+  external_sync_unit_id: project-synthetic
+  external_sync_unit_name: Synthetic scope
+  import_slug: asana
+limits:
+  max_invocations: 3
+  invocation_timeout_ms: 30000
+  scenario_timeout_ms: 60000
+mock_server:
+  config: mock-server.yaml
+  scenario: happy
+  health_path: /admin/config
+assertions:
+  callbacks:
+    expected_terminal_error:
+      - contains:
+          event_type: METADATA_EXTRACTION_ERROR
+    match:
+      - count: 1
