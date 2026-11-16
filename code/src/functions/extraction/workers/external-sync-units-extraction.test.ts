@@ -45,6 +45,7 @@ describe('external-sync-units-extraction worker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
     (AsanaClient as unknown as jest.Mock).mockImplementation(() => ({}));
     mockCheckUserWorkspaceRole.mockResolvedValue(undefined);
     mockSerializeError.mockImplementation((e: any) => e?.message ?? String(e));
@@ -126,6 +127,45 @@ describe('external-sync-units-extraction worker', () => {
       const taskResult = await taskFn({ adapter });
 
       expect(taskResult.status).not.toBe('success');
+    });
+
+    it('should log sanitized error when fetchAllProjects fails', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error');
+      const error = new Error('Network failure');
+      mockFetchAllProjects.mockRejectedValue(error);
+
+      const adapter = createMockAdapter();
+      await taskFn({ adapter });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'External sync unit discovery failed:',
+        expect.objectContaining({
+          phase: 'project_listing',
+          errorType: 'Error',
+          statusHint: 'error',
+        })
+      );
+    });
+
+    it('should log rate limit context when Asana returns 429', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error');
+      mockFetchAllProjects.mockRejectedValue(
+        new AxiosError('Too Many Requests', '429', undefined, undefined, {
+          status: 429,
+          headers: { 'retry-after': '90' },
+        } as unknown as AxiosResponse)
+      );
+
+      const adapter = createMockAdapter();
+      await taskFn({ adapter });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'External sync unit discovery failed:',
+        expect.objectContaining({
+          phase: 'project_listing',
+          statusHint: 'rate_limited',
+        })
+      );
     });
   });
 
