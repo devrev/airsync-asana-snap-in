@@ -167,6 +167,34 @@ describe('external-sync-units-extraction worker', () => {
         })
       );
     });
+
+    it('should keep the existing error result and not log credentials or raw upstream payloads', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error');
+      const upstream = new AxiosError(
+        'Request failed with status code 401',
+        '401',
+        { headers: { Authorization: 'Bearer SECRET-TOKEN-123' } } as any,
+        { path: '/projects' },
+        { status: 401, data: { errors: [{ message: 'RAW-UPSTREAM-PAYLOAD' }] }, headers: {} } as unknown as AxiosResponse
+      );
+      mockFetchAllProjects.mockRejectedValue(upstream);
+
+      const adapter = createMockAdapter();
+      const taskResult = await taskFn({ adapter });
+
+      expect(taskResult.status).toBe('error');
+      expect(taskResult.error.message).toContain('Error paginating projects list from Asana');
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith('External sync unit discovery failed:', {
+        phase: 'project_listing',
+        errorType: 'AxiosError',
+        statusHint: 'error',
+      });
+      const logged = JSON.stringify(consoleErrorSpy.mock.calls);
+      expect(logged).not.toContain('SECRET-TOKEN-123');
+      expect(logged).not.toContain('RAW-UPSTREAM-PAYLOAD');
+      expect(logged).not.toContain('Request failed with status code 401');
+    });
   });
 
   describe('onTimeout', () => {
