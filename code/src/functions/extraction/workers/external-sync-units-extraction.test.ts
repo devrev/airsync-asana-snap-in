@@ -45,6 +45,7 @@ describe('external-sync-units-extraction worker', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
     (AsanaClient as unknown as jest.Mock).mockImplementation(() => ({}));
     mockCheckUserWorkspaceRole.mockResolvedValue(undefined);
     mockSerializeError.mockImplementation((e: any) => e?.message ?? String(e));
@@ -126,6 +127,73 @@ describe('external-sync-units-extraction worker', () => {
       const taskResult = await taskFn({ adapter });
 
       expect(taskResult.status).not.toBe('success');
+    });
+
+    it('should log sanitized error when fetchAllProjects fails', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error');
+      const error = new Error('Network failure');
+      mockFetchAllProjects.mockRejectedValue(error);
+
+      const adapter = createMockAdapter();
+      await taskFn({ adapter });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'External sync unit discovery failed:',
+        expect.objectContaining({
+          phase: 'project_listing',
+          errorType: 'Error',
+          statusHint: 'error',
+        })
+      );
+    });
+
+    it('should log rate limit context when Asana returns 429', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error');
+      mockFetchAllProjects.mockRejectedValue(
+        new AxiosError('Too Many Requests', '429', undefined, undefined, {
+          status: 429,
+          headers: { 'retry-after': '90' },
+        } as unknown as AxiosResponse)
+      );
+
+      const adapter = createMockAdapter();
+      await taskFn({ adapter });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'External sync unit discovery failed:',
+        expect.objectContaining({
+          phase: 'project_listing',
+          statusHint: 'rate_limited',
+        })
+      );
+    });
+
+    it('should keep the existing error result and not log credentials or raw upstream payloads', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error');
+      const upstream = new AxiosError(
+        'Request failed with status code 401',
+        '401',
+        { headers: { Authorization: 'Bearer SECRET-TOKEN-123' } } as any,
+        { path: '/projects' },
+        { status: 401, data: { errors: [{ message: 'RAW-UPSTREAM-PAYLOAD' }] }, headers: {} } as unknown as AxiosResponse
+      );
+      mockFetchAllProjects.mockRejectedValue(upstream);
+
+      const adapter = createMockAdapter();
+      const taskResult = await taskFn({ adapter });
+
+      expect(taskResult.status).toBe('error');
+      expect(taskResult.error.message).toContain('Error paginating projects list from Asana');
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith('External sync unit discovery failed:', {
+        phase: 'project_listing',
+        errorType: 'AxiosError',
+        statusHint: 'error',
+      });
+      const logged = JSON.stringify(consoleErrorSpy.mock.calls);
+      expect(logged).not.toContain('SECRET-TOKEN-123');
+      expect(logged).not.toContain('RAW-UPSTREAM-PAYLOAD');
+      expect(logged).not.toContain('Request failed with status code 401');
     });
   });
 

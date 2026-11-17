@@ -25,6 +25,14 @@ processExtractionTask<ExtractorState>({
       const message = delay !== undefined
         ? `Rate limited by Asana (HTTP 429) while listing projects. Retry in ${delay} seconds.`
         : `Error paginating projects list from Asana: ${serializeError(error)}`;
+
+      // Log sanitized error context without exposing credentials or raw payloads
+      console.error('External sync unit discovery failed:', {
+        phase: 'project_listing',
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        statusHint: delay !== undefined ? 'rate_limited' : 'error',
+      });
+
       return { status: 'error', error: { ...(failure.status === 'error' && failure.error), message } };
     }
     console.log(`Fetched ${asanaProjects.length} projects from Asana workspace. Building sync units...`);

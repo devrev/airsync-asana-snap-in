@@ -250,7 +250,7 @@ For time-scoped and incremental syncs, tasks are filtered using the `modified_si
 
 The `AsanaClient` uses `axios-retry` (3 attempts, exponential backoff 2s, 4s, 8s) for network errors and 5xx responses only. 429s are never retried in-process: sleeping on `Retry-After` inside the worker could run it into the Lambda hard timeout.
 
-`handleExtractionError` supplies a delay value and `handleLoadingError` returns `{ status: 'delay', delaySeconds }` for a 429 (Asana's `Retry-After`, or 60s if missing). Workers return a delay result so `@devrev/airsync-sdk` emits the phase delay event and the platform reschedules. This covers metadata, data and attachment extraction, and data/attachment loading. External-sync-unit extraction has no `*_DELAYED` event, so a 429 there fails the phase with a "retry in N seconds" message.
+`handleExtractionError` supplies a delay value and `handleLoadingError` returns `{ status: 'delay', delaySeconds }` for a 429 (Asana's `Retry-After`, or 60s if missing). Workers return a delay result so `@devrev/airsync-sdk` emits the phase delay event and the platform reschedules. This covers metadata, data and attachment extraction, and data/attachment loading. External-sync-unit extraction has no `*_DELAYED` event, so a 429 there fails the phase with a "retry in N seconds" message. When project listing fails during ESU extraction, the worker also emits one sanitized `console.error` log (`External sync unit discovery failed:` with only `phase`, `errorType` and `statusHint`); it never logs credentials, request/response objects or raw upstream error payloads.
 
 ### 2.4.2 Pagination
 
