@@ -1,0 +1,131 @@
+name: Claude Code Review
+
+on:
+  workflow_call:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+jobs:
+  claude-review:
+    if: |
+      github.event.pull_request.draft == false
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.CLAUDE_AWS_ROLE_TO_ASSUME }}
+          aws-region: us-east-1
+
+      - name: Dismiss old Claude comments
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get PR comments from "claude[bot]" and hide them as outdated
+          REPO="${{ github.repository }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          # Get PR issue comments (not review comments)
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" --jq '.[] | select(.user.login == "claude[bot]") | .node_id' | while read -r comment_node_id; do
+            if [ -n "$comment_node_id" ]; then
+              echo "Hiding Claude's PR comment: $comment_node_id"
+              gh api graphql -f query='
+                mutation($id: ID!) {
+                  minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) {
+                    minimizedComment {
+                      isMinimized
+                    }
+                  }
+                }' -f id="$comment_node_id"
+            fi
+          done
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          use_bedrock: true
+          use_sticky_comment: true
+          prompt: |
+            PR: https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+
+            You are reviewing a pull request in a DevRev AirSync connector repo (TypeScript, `@devrev/airsync-sdk` v2, `manifest.yaml`, code under `code/`).
+
+            ## Process
+            1. Read existing PR comments (`gh api repos/<owner>/<repo>/issues/<n>/comments` and `.../pulls/<n>/comments`). Do not re-raise issues already discussed or dismissed.
+            2. List changed files (`gh pr diff <n> --name-only`) and read the diff. Read surrounding code and dependent files, not only the diff lines. If an extraction worker changed, also read `functions/extraction/index.ts`.
+            3. Run only the checks below that apply to the changed files. Config checks always apply.
+            4. Post exactly ONE consolidated comment with `gh pr comment`, using the output format at the end.
+
+            ## Checks
+
+            ### Config (every PR) — `code/package.json`, `tsconfig.json`, ESLint
+            - CRITICAL: `code/package.json` and `code/tsconfig.json` exist.
+            - CRITICAL: `@devrev/airsync-sdk` is the latest stable 2.x (compare with `npm view @devrev/airsync-sdk@2 version`), and the lockfile agrees.
+            - CRITICAL: TypeScript `strict: true`.
+            - CRITICAL: ESLint sets `@typescript-eslint/no-explicit-any` to `error`.
+            - CRITICAL: deprecated-API usage is an ESLint `error` (`deprecation/deprecation` or `@typescript-eslint/no-deprecated`).
+            - MEDIUM: `no-unsafe-*` rules not at `error`; no `lint` script.
+
+            ### Manifest (only if `manifest.yaml` / `marketplace.yaml` changed)
+            - CRITICAL: no template defaults (`name`/`external_system_name` "Todo", slug `airdrop-todo-*`).
+            - CRITICAL: `version: "2"` as a string.
+            - CRITICAL: every `imports.extractor_function` / `loader_function` matches a `functions[].name`.
+            - CRITICAL: every `imports.allowed_connection_types[]` exists in `keyring_types[].id`.
+            - CRITICAL: `is_subdomain: true` means URLs contain `[SUBDOMAIN]`; `is_subdomain: false` means an `organization_data` section exists.
+            - CRITICAL (most important): `organization_data.response_jq` `id` must be a stable, unique organization-level id. Not a workspace or team name, and not a shared email domain such as gmail.com.
+            - CRITICAL: `secret_transform` is valid jq and matches what the API expects (for example `@base64`).
+            - CRITICAL: `kind: Oauth2` requires `developer_keyrings`, and `oauth_secret` must name a declared keyring.
+            - CRITICAL: placeholders use `[BRACKET]` form, never `{BRACE}` or `(PAREN)`.
+            - CRITICAL: no staging, test, dev or localhost URLs.
+            - MEDIUM: sensitive fields are not exposed unprotected; OAuth scope descriptions are present; if `TIME_SCOPED_SYNCS` is declared, the extraction code implements it.
+            - LOW: input descriptions, unsafe default values.
+
+            ### Data extraction (only if `extraction/workers/data-extraction.ts`, `extraction/index.ts`, the HTTP client or shared helpers changed)
+            - CRITICAL: uses `processExtractionTask<State>`; calls `adapter.initializeRepos`; repo `itemType` matches the metadata record_type (case-sensitive).
+            - CRITICAL: every completed path returns exactly one valid TaskResult or throws. Helper delay and error results are preserved.
+            - CRITICAL: state (cursor, counters) is updated BEFORE the `adapter.isTimeout` check, and progress is not lost.
+            - CRITICAL: when `adapter.isTimeout` is true, return immediately. No `sleep`, `wait` or other blocking work.
+            - CRITICAL: `spawn()` receives `initialDomainMapping`; `CONTINUE_EXTRACTING_DATA` resumes from saved state.
+            - CRITICAL: pagination position and per-item-type completion are persisted. State is JSON-serializable and stays under about 1MB.
+            - HIGH: records include `id`, `created_date`, `modified_date`; work items include `item_url_field`; no manual batching (the SDK batches).
+            - HIGH: 4xx errors return an error immediately (non-retryable); 5xx and 429 retry with a warn log and honour rate limits.
+            - HIGH: incremental sync is supported when `TIME_SCOPED_SYNCS` is declared.
+            - MEDIUM: blocking the event loop; poor logging.
+
+            ### Attachment extraction (only if `*attachment*-extraction.ts` changed)
+            - CRITICAL: attachments are streamed over HTTP and never buffered fully in memory.
+            - CRITICAL: the `streamAttachments` result is returned unchanged as the TaskResult.
+            - HIGH: bounded concurrency and batch size; timeout handling as for data extraction; 429 handling.
+
+            ### Loading / normalization (only if `load-data.ts`, `load-attachments.ts`, `loading/index.ts`, `data-normalization.ts`, `data-denormalization.ts`, `external_domain_metadata.json` or `initial_domain_mapping.json` changed)
+            - HIGH: record types in normalizers, denormalizers, external domain metadata, initial domain mapping and loaders are consistent.
+            - HIGH: `loader_function` in the manifest matches the loading entry point and workers.
+
+            ### Security (every PR)
+            - CRITICAL/HIGH: PII, PHI or credentials in logs, thrown errors, task errors or saved state. Never log whole records or tokens; log ids only. Cite source and destination without reproducing sensitive values.
+            - HIGH: data-loss risks, incorrect state mutation, breaking changes to public interfaces.
+
+            ## Do not report
+            Style, naming or formatting preferences; missing tests or docs; generic advice; dependency-update warnings; generated or auto-formatted code; anything already discussed in the PR.
+
+            ## Output
+            Post one comment. Always start with a status table, one row per area (Config, Manifest, Data Extraction, Attachment Extraction, Loading/Normalization, Security). Status is `✅ Passed`, `❌ <n>C <n>H` or `⏭️ Skipped`. Add a one-line summary.
+            Below the table, add sections only for severities that have findings, in the order CRITICAL, HIGH, MEDIUM. Each finding is `**[C1] Title** (`file:line`)`, then `Problem:` and `Fix:`.
+            If every area passed, post the table alone.
+
+          claude_args: |
+            --allowed-tools "Read,Grep,Glob,Bash(gh api:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr checkout:*),Bash(git checkout:*),Bash(cat:*),Bash(jq:*)"
