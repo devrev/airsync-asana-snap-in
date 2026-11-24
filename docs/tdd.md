@@ -23,7 +23,7 @@ This document describes the AirSync connector for [Asana](https://asana.com/), e
 
 # 2. Technical Design
 
-Runtime dependency: `@devrev/airsync-sdk` 2.1.0.
+Runtime dependency: `@devrev/airsync-sdk` 2.3.0-beta.0.
 
 ## 2.1 Authentication
 

@@ -147,6 +147,7 @@ describe('SDK v2 migration over HTTP', () => {
       : { id: { devrev: 'task-devrev' }, data: { name: 'Fresh task' } };
     server.setRoute({ method: 'GET', path: '/batch', status: 200, bodyBuffer: gzipSync(JSON.stringify(item) + '\n') });
     server.setRoute({ method: 'GET', path: '/file', status: 200, bodyBuffer: Buffer.from('file contents') });
+    server.setRoute({ method: 'GET', path: targetMapperPath, status: 404, body: {} });
     server.setRoute({ method: 'GET', path: '/api/1.0/projects/project', status,
       headers: { 'Retry-After': '17' }, body: { errors: [] } });
     const input = event(attachment ? EventType.StartLoadingAttachments : EventType.StartLoadingData);
@@ -171,8 +172,12 @@ describe('SDK v2 migration over HTTP', () => {
     (server as unknown as { requests: unknown[] }).requests.length = 0;
     server.setRoute({ method: 'GET', path: downloadPath, status: 200, body: { download_url: `${server.baseUrl}/batch` } });
     server.setRoute({ method: 'GET', path: '/api/1.0/projects/project', status: 200, body: { data: { gid: 'project' } } });
-    server.setRoute({ method: 'GET', path: targetMapperPath, status: attachment ? 200 : 404,
-      body: { sync_mapper_record: { id: 'mapper', external_ids: ['12345'] } } });
+    // The attachment is unmapped; its parent task is already mapped.
+    server.setRoute({ method: 'GET', path: targetMapperPath, status: 404, body: {},
+      succeedThenFail: attachment ? {
+        successCount: 1, errorStatus: 200,
+        errorBody: { sync_mapper_record: { id: 'mapper', external_ids: ['12345'] } },
+      } : undefined });
     const writePath = attachment ? '/api/1.0/attachments' : '/api/1.0/tasks';
     server.setRoute({ method: 'POST', path: writePath, status: 200, body: { data: { gid: 'created' } } });
     input.payload.event_type = attachment ? EventType.ContinueLoadingAttachments : EventType.ContinueLoadingData;
